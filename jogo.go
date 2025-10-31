@@ -13,7 +13,6 @@ import (
 // estado inimigo individual
 type InimigoStruct struct {
 	x, y           int
-	stop           chan bool
 	UltimoVisitado Elemento
 	estado         string
 	chBotao        chan bool
@@ -37,6 +36,7 @@ type MapaUpdate struct {
 	tipo           string
 	fx, fy, tx, ty int
 	UltimoVisitado Elemento
+	NovoElemento   Elemento // Novo campo para o novo elemento a ser desenhado no destino
 }
 
 // Elemento representa qualquer objeto do mapa (parede, personagem, vegetação, etc)
@@ -59,20 +59,23 @@ type Jogo struct {
 	botoes         []*BotaoStruct
 	chInimigoBotao []chan bool
 	chInimigoMoeda []chan bool
+	chEncerrar     chan struct{} // novo canal de encerramento
 }
 
 // Elementos visuais do jogo
 var (
-	Personagem     = Elemento{'☺', CorCinzaEscuro, CorPadrao, false}
-	Parede         = Elemento{'▤', CorParede, CorFundoParede, true}
-	Vegetacao      = Elemento{'♣', CorVerde, CorPadrao, false}
-	Vazio          = Elemento{' ', CorPadrao, CorPadrao, false}
-	Inimigo        = Elemento{'☠', CorVermelho, CorPadrao, false}
-	Moeda          = Elemento{'$', CorAmarelo, CorPadrao, false}
-	BotaoLigado    = Elemento{'●', CorMagenta, CorPadrao, false}
-	BotaoDesligado = Elemento{'○', CorVermelho, CorPadrao, false}
-	moedas         []*MoedaStruct
-	Inimigos       []*InimigoStruct
+	Personagem         = Elemento{'☺', CorCinzaEscuro, CorPadrao, false}
+	Parede             = Elemento{'▤', CorParede, CorFundoParede, true}
+	Vegetacao          = Elemento{'♣', CorVerde, CorPadrao, false}
+	Vazio              = Elemento{' ', CorPadrao, CorPadrao, false}
+	Inimigo            = Elemento{'☠', CorVermelho, CorPadrao, false}
+	InimigoPerseguicao = Elemento{'!', CorVermelho, CorPadrao, false}
+	Moeda              = Elemento{'$', CorAmarelo, CorPadrao, false}
+	BotaoLigado        = Elemento{'●', CorMagenta, CorPadrao, false}
+	BotaoDesligado     = Elemento{'○', CorVermelho, CorPadrao, false}
+	moedas             []*MoedaStruct
+	Inimigos           []*InimigoStruct
+	novoElemento       Elemento
 )
 
 func (j *Jogo) Run() {
@@ -99,8 +102,8 @@ func (j *Jogo) Run() {
 			}
 			interfaceDesenharJogo(j)
 		case "Inimigo":
-			// Restaura e move
-			if update.UltimoVisitado == BotaoDesligado || update.UltimoVisitado == BotaoLigado {
+			// Restaura o elemento anterior na posição antiga do inimigo
+			if update.UltimoVisitado.simbolo == BotaoDesligado.simbolo || update.UltimoVisitado.simbolo == BotaoLigado.simbolo {
 				if j.botoes[0].ligado {
 					update.UltimoVisitado = BotaoLigado
 				} else {
@@ -108,7 +111,7 @@ func (j *Jogo) Run() {
 				}
 			}
 			j.Mapa[update.fy][update.fx] = update.UltimoVisitado
-			j.Mapa[update.ty][update.tx] = Inimigo
+			j.Mapa[update.ty][update.tx] = update.NovoElemento
 			interfaceDesenharJogo(j)
 		case "Perdeu":
 			interfacePerdeu(j) // para evitar deadlock
@@ -123,6 +126,7 @@ func jogoNovo() Jogo {
 	return Jogo{
 		UltimoVisitado: Vazio,
 		chMapa:         make(chan MapaUpdate),
+		chEncerrar:     make(chan struct{}),
 		encerrar:       false,
 		NumMoedas:      0,
 	}
@@ -233,7 +237,7 @@ func jogoMoverPersonagem(jogo *Jogo, x, y, dx, dy int) {
 		}
 	}
 
-	if jogo.Mapa[ny][nx].simbolo == Inimigo.simbolo {
+	if jogo.Mapa[ny][nx].simbolo == Inimigo.simbolo || jogo.Mapa[ny][nx].simbolo == InimigoPerseguicao.simbolo {
 		interfacePerdeu(jogo)
 	}
 
@@ -283,15 +287,19 @@ func BotaoController(jogo *Jogo) {
 // logica botoes
 func ServiceBotoes(jogo *Jogo) {
 	for {
-		time.Sleep(15 * time.Second)
-		for _, botao := range jogo.botoes {
-			botao.ligado = !botao.ligado
+		select {
+		case <-jogo.chEncerrar:
+			return
+		case <-time.After(15 * time.Second):
+			for _, botao := range jogo.botoes {
+				botao.ligado = !botao.ligado
+			}
+			select {
+			case jogo.chMapa <- MapaUpdate{tipo: "Botao"}:
+			case <-jogo.chEncerrar:
+				return
+			}
 		}
-
-		jogo.chMapa <- MapaUpdate{
-			tipo: "Botao",
-		}
-
 	}
 }
 
@@ -312,18 +320,24 @@ func MoedaController(jogo *Jogo) {
 func ServiceMoeda(jogo *Jogo, m *MoedaStruct) {
 	for {
 		select {
+		case <-jogo.chEncerrar:
+			return
 		case <-m.stop:
 			return
 		case <-time.After((time.Duration(rand.Intn(10) + 5)) * time.Second):
 			num1 := rand.Intn(len(jogo.Mapa))
 			num2 := rand.Intn(len(jogo.Mapa[num1]))
 			if jogo.Mapa[num1][num2].simbolo == ' ' {
-				jogo.chMapa <- MapaUpdate{
+				select {
+				case jogo.chMapa <- MapaUpdate{
 					tipo: "Moeda",
 					fx:   m.x, fy: m.y,
 					tx: num2, ty: num1,
+				}:
+					m.x, m.y = num2, num1
+				case <-jogo.chEncerrar:
+					return
 				}
-				m.x, m.y = num2, num1
 			}
 		}
 	}
@@ -336,7 +350,6 @@ func InimigoController(jogo *Jogo) {
 			if elem.simbolo == '☠' {
 				i := &InimigoStruct{
 					x: x, y: y,
-					stop:           make(chan bool),
 					UltimoVisitado: Vazio,
 					estado:         "Patrulha",
 					chBotao:        make(chan bool, 1), // evitar bloqueio
@@ -355,6 +368,8 @@ func InimigoController(jogo *Jogo) {
 func ServiceInimigo(jogo *Jogo, i *InimigoStruct) {
 	for {
 		select {
+		case <-jogo.chEncerrar:
+			return
 		case botaoEstado := <-i.chBotao:
 			if botaoEstado {
 				i.estado = "Patrulha"
@@ -428,20 +443,34 @@ func ServiceInimigo(jogo *Jogo, i *InimigoStruct) {
 			if nx != i.x || ny != i.y {
 				// colisao
 				if jogo.PosX == nx && jogo.PosY == ny {
-					jogo.chMapa <- MapaUpdate{
-						tipo: "Perdeu",
+					select {
+					case jogo.chMapa <- MapaUpdate{tipo: "Perdeu"}:
+					case <-jogo.chEncerrar:
+						return
 					}
 				}
 
 				i.UltimoVisitado = jogo.Mapa[ny][nx]
+
+				// ve estado do elemento
+				if i.estado == "Perseguicao" {
+					novoElemento = InimigoPerseguicao
+				} else {
+					novoElemento = Inimigo
+				}
+
 				// Envia update normal
-				jogo.chMapa <- MapaUpdate{
+				select {
+				case jogo.chMapa <- MapaUpdate{
 					tipo: "Inimigo",
 					fx:   i.x, fy: i.y,
 					tx: nx, ty: ny,
 					UltimoVisitado: i.UltimoVisitado,
+					NovoElemento:   novoElemento,
+				}:
+				case <-jogo.chEncerrar:
+					return
 				}
-
 				// Atualiza estado
 				i.x, i.y = nx, ny
 			}

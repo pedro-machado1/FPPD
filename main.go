@@ -32,14 +32,11 @@ func main() {
 	// Loop principal de entrada
 	for !jogo.encerrar {
 		evento := interfaceLerEventoTeclado()
-		if evento.Tipo == "sair" {
-			jogo.encerrar = true
+		if continuar := personagemExecutarAcao(evento, &jogo); !continuar || jogo.encerrar {
 			break
 		}
-		if continuar := personagemExecutarAcao(evento, &jogo); !continuar {
-			break
-		}
+
 	}
 
-	interfaceLimparTela()
+	defer interfaceLimparTela()
 }
