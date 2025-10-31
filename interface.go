@@ -120,11 +120,13 @@ func interfaceDesenharNumMoedas(numMoedas int, jogo *Jogo) {
 
 func interfaceGanhou(jogo *Jogo) {
 	interfaceLimparTela()
-	msg := "Parabens você conseguiu coletar as 5 moedas, Clique Esc para voltar ao terminal"
+	msg := "Você Ganhou, Clique Esc para voltar ao terminal"
 	for i, c := range msg {
 		termbox.SetCell(i, 5, c, CorTexto, CorPadrao)
 	}
 	interfaceAtualizarTela()
+
+	close(jogo.chEncerrar)
 
 	for {
 		ev := termbox.PollEvent()
@@ -142,6 +144,8 @@ func interfacePerdeu(jogo *Jogo) {
 		termbox.SetCell(i, 5, c, CorTexto, CorPadrao)
 	}
 	interfaceAtualizarTela()
+
+	close(jogo.chEncerrar)
 
 	for {
 		ev := termbox.PollEvent()
