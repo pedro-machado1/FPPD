@@ -6,9 +6,32 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/rpc"
 	"os"
 	"time"
 )
+
+// ---------------- Tipos do multiplayer (cliente) ----------------
+type EstadoPlayer struct {
+	ID         string
+	PosX, PosY int
+	Sequence   int
+}
+
+type EstadoJogo struct {
+	Players     map[string]EstadoPlayer
+	BotaoAtivo  bool
+	PortalAtivo bool
+}
+
+type Movimento struct {
+	ID       string
+	PosX     int
+	PosY     int
+	Sequence int
+}
+
+// ---------------- restante do jogo local ----------------
 
 // estado inimigo individual
 type InimigoStruct struct {
@@ -59,7 +82,11 @@ type Jogo struct {
 	botoes         []*BotaoStruct
 	chInimigoBotao []chan bool
 	chInimigoMoeda []chan bool
-	chEncerrar     chan struct{} // novo canal de encerramento
+	chEncerrar     chan struct{}
+
+	// Multiplayer
+	Cliente *rpc.Client
+	ID      string
 }
 
 // Elementos visuais do jogo
@@ -79,18 +106,19 @@ var (
 )
 
 func (j *Jogo) Run() {
-	interfaceDesenharJogo(j)
+	// desenho inicial sem estado de servidor
+	interfaceDesenharJogo(j, EstadoJogo{})
 
 	for {
 		update := <-j.chMapa
 		switch update.tipo {
 		case "Personagem":
 			jogoMoverPersonagem(j, update.fx, update.fy, update.tx-update.fx, update.ty-update.fy)
-			interfaceDesenharJogo(j)
+			interfaceDesenharJogo(j, EstadoJogo{})
 		case "Moeda":
 			j.Mapa[update.fy][update.fx] = Vazio
 			j.Mapa[update.ty][update.tx] = Moeda
-			interfaceDesenharJogo(j)
+			interfaceDesenharJogo(j, EstadoJogo{})
 
 		case "Botao":
 			for _, botao := range j.botoes {
@@ -100,7 +128,7 @@ func (j *Jogo) Run() {
 					j.Mapa[botao.y][botao.x] = BotaoDesligado
 				}
 			}
-			interfaceDesenharJogo(j)
+			interfaceDesenharJogo(j, EstadoJogo{})
 		case "Inimigo":
 			// Restaura o elemento anterior na posição antiga do inimigo
 			if update.UltimoVisitado.simbolo == BotaoDesligado.simbolo || update.UltimoVisitado.simbolo == BotaoLigado.simbolo {
@@ -112,7 +140,7 @@ func (j *Jogo) Run() {
 			}
 			j.Mapa[update.fy][update.fx] = update.UltimoVisitado
 			j.Mapa[update.ty][update.tx] = update.NovoElemento
-			interfaceDesenharJogo(j)
+			interfaceDesenharJogo(j, EstadoJogo{})
 		case "Perdeu":
 			interfacePerdeu(j) // para evitar deadlock
 		}
@@ -475,5 +503,12 @@ func ServiceInimigo(jogo *Jogo, i *InimigoStruct) {
 				i.x, i.y = nx, ny
 			}
 		}
+	}
+}
+
+// Atualiza elementos dependentes do estado lógico global (opcional)
+func jogoAtualizarEstadoMultiplayer(jogo *Jogo, estado EstadoJogo) {
+	if estado.PortalAtivo {
+		jogo.StatusMsg = "Portal ativo!"
 	}
 }

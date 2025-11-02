@@ -61,24 +61,25 @@ func interfaceLerEventoTeclado() EventoTeclado {
 }
 
 // Renderiza todo o estado atual do jogo na tela
-func interfaceDesenharJogo(jogo *Jogo) {
+func interfaceDesenharJogo(jogo *Jogo, estado EstadoJogo) {
 	interfaceLimparTela()
 
-	// Desenha todos os elementos do mapa
+	// Desenha todos os elementos do mapa (somente no cliente)
 	for y, linha := range jogo.Mapa {
 		for x, elem := range linha {
 			interfaceDesenharElemento(x, y, elem)
 		}
 	}
 
-	// Desenha o personagem sobre o mapa
-	interfaceDesenharElemento(jogo.PosX, jogo.PosY, Personagem)
+	// Desenha todos os players vindos do servidor
+	for _, p := range estado.Players {
+		interfaceDesenharElemento(p.PosX, p.PosY, Personagem)
+	}
 
-	// Desenha a barra de status
+	// Barra de status
 	interfaceDesenharBarraDeStatus(jogo)
 	interfaceDesenharNumMoedas(jogo.NumMoedas, jogo)
 
-	// Força a atualização do terminal
 	interfaceAtualizarTela()
 }
 
