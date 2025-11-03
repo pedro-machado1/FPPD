@@ -1,4 +1,4 @@
-// main.go - Loop principal do jogo
+// main.go - cliente: loop principal (sincroniza, desenha e processa input)
 package main
 
 import (
@@ -7,19 +7,12 @@ import (
 	"net/rpc"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
-var (
-	mu          sync.Mutex
-	estadoAtual EstadoJogo
-)
-
 func main() {
-	// Usa "mapa.txt" como arquivo padrão ou lê o primeiro argumento (playerID e opcionalmente mapa)
 	if len(os.Args) < 2 {
-		fmt.Println("Use: jogo.exe <playerID> [mapa.txt] [endereco_servidor]")
+		fmt.Println("Use: go run . <playerID> [mapa.txt] [serverAddr]")
 		return
 	}
 	id := os.Args[1]
@@ -29,27 +22,30 @@ func main() {
 		mapaFile = os.Args[2]
 	}
 
-	// Lê endereço do servidor ANTES de iniciar o termbox
-	var endereco string
+	endereco := "127.0.0.1:8932"
 	if len(os.Args) > 3 {
 		endereco = os.Args[3]
 	} else {
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Digite o endereco do servidor (ex: 127.0.0.1:8932): ")
+		fmt.Printf("Endereço do servidor (ENTER para %s): ", endereco)
 		txt, _ := reader.ReadString('\n')
-		endereco = strings.TrimSpace(txt)
+		txt = strings.TrimSpace(txt)
+		if txt != "" {
+			endereco = txt
+		}
 	}
 
-	// Inicializa o jogo local (mapa no cliente)
+	// preparar jogo local
 	jogo := jogoNovo()
 	if err := jogoCarregarMapa(mapaFile, &jogo); err != nil {
-		panic(err)
+		fmt.Println("Erro carregar mapa:", err)
+		return
 	}
 
-	// Conecta ao servidor
+	// conectar servidor RPC
 	client, err := rpc.Dial("tcp", endereco)
 	if err != nil {
-		fmt.Println("Erro ao conectar ao servidor RPC:", err)
+		fmt.Println("Erro conectar RPC:", err)
 		return
 	}
 	jogo.Cliente = client
@@ -57,50 +53,35 @@ func main() {
 
 	var ok bool
 	if err := client.Call("Servidor.RegistrarJogador", id, &ok); err != nil || !ok {
-		fmt.Println("Erro ao registrar jogador no servidor")
+		fmt.Println("Erro registrar jogador no servidor")
 		return
 	}
 
-	// Agora inicia a interface (termbox)
+	// iniciar interface (termbox)
 	interfaceIniciar()
 	defer interfaceFinalizar()
 
-	// Goroutine para polling de estado global dos players
-	go func() {
-		tk := time.NewTicker(100 * time.Millisecond)
-		defer tk.Stop()
-		for range tk.C {
-			var estado EstadoJogo
-			if err := client.Call("Servidor.GetEstadoJogo", id, &estado); err != nil {
-				continue
-			}
-			mu.Lock()
-			estadoAtual = estado
-			mu.Unlock()
-			jogoAtualizarEstadoMultiplayer(&jogo, estado)
-		}
-	}()
-
-	// Loop de renderização
-	go func() {
-		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
-		for range ticker.C {
-			mu.Lock()
-			estado := estadoAtual
-			mu.Unlock()
-			interfaceDesenharJogo(&jogo, estado)
-		}
-	}()
-
-	// Loop principal de entrada
-	go jogo.Run()
+	// loop principal: buscar estado, desenhar, ler input, processar
 	for !jogo.encerrar {
-		evento := interfaceLerEventoTeclado()
-		if continuar := personagemExecutarAcao(evento, &jogo); !continuar || jogo.encerrar {
+		// busca estado do servidor (timeout leve para não travar)
+		var estado EstadoJogo
+		_ = client.Call("Servidor.GetEstadoJogo", id, &estado)
+		interfaceDesenharJogo(&jogo, estado)
+
+		// ler input (bloqueia até tecla)
+		ev := interfaceLerEventoTeclado()
+		if !personagemExecutarAcao(ev, &jogo) {
 			break
 		}
+
+		// pequeno delay para reduzir carga
+		time.Sleep(25 * time.Millisecond)
 	}
 
-	defer interfaceLimparTela()
+	// desconecta ao sair
+	if jogo.Cliente != nil && jogo.ID != "" {
+		var ack bool
+		_ = jogo.Cliente.Call("Servidor.DesconectarJogador", jogo.ID, &ack)
+	}
+	interfaceLimparTela()
 }
