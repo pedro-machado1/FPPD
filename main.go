@@ -1,4 +1,4 @@
-// main.go - cliente: loop principal (sincroniza, desenha e processa input)
+// main.go - cliente: loop principal
 package main
 
 import (
@@ -57,25 +57,27 @@ func main() {
 		return
 	}
 
-	// iniciar interface (termbox)
+	// iniciar interface
 	interfaceIniciar()
 	defer interfaceFinalizar()
 
-	// loop principal: buscar estado, desenhar, ler input, processar
-	for !jogo.encerrar {
-		// busca estado do servidor (timeout leve para não travar)
-		var estado EstadoJogo
-		_ = client.Call("Servidor.GetEstadoJogo", id, &estado)
-		interfaceDesenharJogo(&jogo, estado)
+	go func() {
+		for !jogo.encerrar {
+			var estado EstadoJogo
+			err := client.Call("Servidor.GetEstadoJogo", id, &estado)
+			if err == nil {
+				interfaceDesenharJogo(&jogo, estado)
+			}
+			time.Sleep(100 * time.Millisecond) // 100ms
+		}
+	}()
 
-		// ler input (bloqueia até tecla)
+	// loop principal
+	for !jogo.encerrar {
 		ev := interfaceLerEventoTeclado()
 		if !personagemExecutarAcao(ev, &jogo) {
 			break
 		}
-
-		// pequeno delay para reduzir carga
-		time.Sleep(25 * time.Millisecond)
 	}
 
 	// desconecta ao sair

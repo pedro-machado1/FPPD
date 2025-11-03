@@ -1,4 +1,3 @@
-// server.go - servidor RPC centralizado e sincronizado
 package main
 
 import (
@@ -10,7 +9,7 @@ import (
 	"time"
 )
 
-// EstadoPlayer guarda informações individuais de cada jogador.
+// Informações jogador.
 type EstadoPlayer struct {
 	ID       string
 	PosX     int
@@ -19,12 +18,11 @@ type EstadoPlayer struct {
 	Vidas    int
 }
 
-// EstadoJogo representa o estado global do jogo.
+// estado global do jogo.
 type EstadoJogo struct {
 	Players map[string]EstadoPlayer
 }
 
-// Movimento é enviado pelos clientes para atualizar posição/vidas.
 type Movimento struct {
 	ID       string
 	PosX     int
@@ -33,13 +31,13 @@ type Movimento struct {
 	Vidas    int
 }
 
-// Servidor central que mantém o estado de todos os jogadores.
+// Servidor central
 type Servidor struct {
 	mu     sync.Mutex
 	estado EstadoJogo
 }
 
-// RegistrarJogador adiciona um novo jogador ao mapa global.
+// novo jogador.
 func (s *Servidor) RegistrarJogador(id string, reply *bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -48,12 +46,11 @@ func (s *Servidor) RegistrarJogador(id string, reply *bool) error {
 		s.estado.Players = make(map[string]EstadoPlayer)
 	}
 
-	// Se o jogador ainda não existe, cria ele.
 	if _, existe := s.estado.Players[id]; !existe {
 		s.estado.Players[id] = EstadoPlayer{
 			ID:       id,
-			PosX:     1,
-			PosY:     1,
+			PosX:     11,
+			PosY:     6,
 			Sequence: 0,
 			Vidas:    3,
 		}
@@ -64,7 +61,7 @@ func (s *Servidor) RegistrarJogador(id string, reply *bool) error {
 	return nil
 }
 
-// DesconectarJogador remove o jogador do estado global.
+// remove o jogador.
 func (s *Servidor) DesconectarJogador(id string, reply *bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -77,20 +74,18 @@ func (s *Servidor) DesconectarJogador(id string, reply *bool) error {
 	return nil
 }
 
-// GetEstadoJogo envia o estado atual do jogo para o cliente.
+// envia o estado atual.
 func (s *Servidor) GetEstadoJogo(id string, estado *EstadoJogo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// envia cópia do estado global
 	*estado = s.estado
 	fmt.Printf("[%s] pediu estado (%d jogadores conectados)\n",
 		id, len(s.estado.Players))
 	return nil
 }
 
-// AtualizarMovimento atualiza a posição e vidas de um jogador.
-// Se Sequence for inválido (menor ou igual ao último), reply = false → cliente tenta novamente.
+// Atualiza a posição .
 func (s *Servidor) AtualizarMovimento(mov Movimento, reply *bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -101,7 +96,6 @@ func (s *Servidor) AtualizarMovimento(mov Movimento, reply *bool) error {
 		return fmt.Errorf("jogador não encontrado")
 	}
 
-	// verifica se movimento é mais recente
 	if mov.Sequence <= player.Sequence {
 		fmt.Printf("[%s] seq inválida %d <= %d (ignorado)\n",
 			mov.ID, mov.Sequence, player.Sequence)
@@ -124,14 +118,13 @@ func (s *Servidor) AtualizarMovimento(mov Movimento, reply *bool) error {
 	return nil
 }
 
-// Instância global única do servidor (compartilhada entre todos os clientes).
 var srv = &Servidor{
 	estado: EstadoJogo{
 		Players: make(map[string]EstadoPlayer),
 	},
 }
 
-// Função principal que inicia o servidor RPC e aceita conexões.
+// Função principal
 func main() {
 	if err := rpc.RegisterName("Servidor", srv); err != nil {
 		log.Fatal("Falha ao registrar serviço:", err)

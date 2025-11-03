@@ -1,4 +1,4 @@
-// personagem.go - entrada do jogador e envio de movimento ao servidor
+// personagem.go - Funções para movimentação e ações do personagem
 package main
 
 import (
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// personagemExecutarAcao processa teclas: sair, interagir, mover.
+// Processa o evento do teclado e executa a ação correspondente
 func personagemExecutarAcao(ev EventoTeclado, jogo *Jogo) bool {
 	switch ev.Tipo {
 	case "sair":
@@ -39,7 +39,7 @@ func personagemExecutarAcao(ev EventoTeclado, jogo *Jogo) bool {
 
 		nx, ny := jogo.PosX+dx, jogo.PosY+dy
 
-		// colisão com inimigo: dano, sem mover
+		// colisão com inimigo
 		if jogo.Mapa[ny][nx].simbolo == Inimigo.simbolo {
 			jogoVerificarColisao(jogo, nx, ny)
 			return true
@@ -50,11 +50,10 @@ func personagemExecutarAcao(ev EventoTeclado, jogo *Jogo) bool {
 			return true
 		}
 
-		// atualiza localmente (garante desenho imediato)
 		jogo.PosX = nx
 		jogo.PosY = ny
 
-		// prepara movimento com sequence incremental
+		// prepara
 		jogo.seq++
 		mov := Movimento{
 			ID:       jogo.ID,
@@ -64,17 +63,17 @@ func personagemExecutarAcao(ev EventoTeclado, jogo *Jogo) bool {
 			Vidas:    jogo.vidas,
 		}
 
-		// tenta enviar até 3 vezes se servidor pedir retransmissão
 		var ack bool
-		for tentativa := 0; tentativa < 3; tentativa++ {
+		// 3 vezes
+		for c := 0; c < 3; c++ {
 			if err := jogo.Cliente.Call("Servidor.AtualizarMovimento", mov, &ack); err != nil {
 				log.Println("erro RPC:", err)
 			}
 			if ack {
-				// aceito pelo servidor
+				// aceito
 				break
 			}
-			// servidor pediu retransmissão (ack==false) ou erro: re-tenta
+			// servidor
 			time.Sleep(50 * time.Millisecond)
 		}
 		return true

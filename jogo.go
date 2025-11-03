@@ -1,4 +1,4 @@
-// jogo.go - carregamento de mapa e utilitários do cliente
+// jogo.go - Funções para manipular os elementos do jogo, como carregar o mapa e mover o personagem
 package main
 
 import (
@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// EstadoPlayer/EstadoJogo/Movimento (exportadas para RPC se necessário)
 type EstadoPlayer struct {
 	ID       string
 	PosX     int
@@ -29,7 +28,7 @@ type Movimento struct {
 	Vidas    int
 }
 
-// Elemento do mapa
+// Elemento representa qualquer objeto do mapa (parede, personagem, vegetação, etc)
 type Elemento struct {
 	simbolo  rune
 	cor      Cor
@@ -37,7 +36,7 @@ type Elemento struct {
 	tangivel bool
 }
 
-// Jogo local
+// Jogo contém o estado atual do jogo
 type Jogo struct {
 	Mapa      [][]Elemento
 	PosX      int
@@ -51,6 +50,7 @@ type Jogo struct {
 	ID        string
 }
 
+// Elementos visuais do jogo
 var (
 	Personagem  = Elemento{'☺', CorVerde, CorPadrao, false}
 	OtherPlayer = Elemento{'☻', CorMagenta, CorPadrao, false}
@@ -60,7 +60,10 @@ var (
 	Inimigo     = Elemento{'☠', CorVermelho, CorPadrao, true}
 )
 
+// Cria e retorna uma nova instância do jogo
 func jogoNovo() Jogo {
+	// O ultimo elemento visitado é inicializado como vazio
+	// pois o jogo começa com o personagem em uma posição vazia
 	return Jogo{
 		Mapa:     [][]Elemento{},
 		PosX:     1,
@@ -71,6 +74,7 @@ func jogoNovo() Jogo {
 	}
 }
 
+// Lê um arquivo texto linha por linha e constrói o mapa do jogo
 func jogoCarregarMapa(nome string, jogo *Jogo) error {
 	arq, err := os.Open(nome)
 	if err != nil {
@@ -109,16 +113,24 @@ func jogoCarregarMapa(nome string, jogo *Jogo) error {
 	return nil
 }
 
+// Verifica se o personagem pode se mover para a posição (x, y)
 func jogoPodeMoverPara(jogo *Jogo, x, y int) bool {
+	// Verifica se a coordenada Y está dentro dos limites verticais do mapa
 	if y < 0 || y >= len(jogo.Mapa) {
 		return false
 	}
+
+	// Verifica se a coordenada X está dentro dos limites horizontais do mapa
 	if x < 0 || x >= len(jogo.Mapa[y]) {
 		return false
 	}
+
+	// Verifica se o elemento de destino é tangível (bloqueia passagem)
 	if jogo.Mapa[y][x].tangivel {
 		return false
 	}
+
+	// Pode mover para a posição
 	return true
 }
 
